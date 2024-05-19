@@ -1,117 +1,177 @@
 import os
-import sys
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-from PIL import Image
+from urllib.parse import urljoin, urlparse
+from PIL import Image, UnidentifiedImageError
 from io import BytesIO
+import logging
+from tqdm import tqdm
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
 
-# Custom printf function
-def printf(format, *args):
-    sys.stdout.write(format % args + '\n')
-    
-# Recursive function to find and download images within div elements
-def find_and_download_images(container, base_url, folder_path):
-    '''
-    # DEBUG Print details of the endpoint response
-    # Print result of all divs with the specific ID
-    printf("Found divs: %s.\n", 
-       container)
-    '''
-    
-    # for all direct children
-    child_list = container.find_all("div", { "class" : "image-viewer-main image-viewer-container" })
-    
-    for child in child_list:
-        print (child)
+class ImageScraper:
+    def __init__(self, chromedriver_path, save_directory='./downloaded_images', max_depth=2, headless=True):
+        self.chromedriver_path = chromedriver_path
+        self.save_directory = save_directory
+        self.max_depth = max_depth
+        self.headless = headless
+        self.driver = None
+        self.setup_logging()
+
+    def setup_logging(self):
+        log_file = 'scraper.log'
+        logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s - %(levelname)s - %(message)s',
+                            handlers=[logging.FileHandler(log_file), logging.StreamHandler()])
+        logging.info("Logging setup complete.")
+
+    def setup_selenium(self):
+        logging.info("Setting up Selenium WebDriver.")
+        chrome_options = Options()
+        if self.headless:
+            chrome_options.add_argument("--headless")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_service = Service(self.chromedriver_path)
         
-    for child in child_list():
-        print (child)
+        try:
+            self.driver = webdriver.Chrome(service=chrome_service, options=chrome_options)
+            logging.info("Selenium WebDriver setup complete.")
+        except Exception as e:
+            logging.error(f"Error setting up Selenium WebDriver: {e}")
+            raise
 
-    # Find all img tags within the container
-    for div_tag in container.find_all('div'):
-        div_src = div_tag.get('src') or div_tag.get('data-src')
-        alt_text = div_tag.get('alt', 'unnamed_image').replace(' ', '_').replace('/', '_')
-        if div_src:
-            div_src = urljoin(base_url, div_src)  # Ensure div_src is an absolute URL
-            download_image(div_src, alt_text, folder_path)
-    
-    # Recursively search for img tags within nested divs
-    for div in container.find_all('div', recursive=False):
-        find_and_download_images(div, base_url, folder_path)
-        
-# Function to process a given URL
-def process_url(url, folder_path):
-    headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
-    }
-    response = requests.get(url, headers=headers)
+    @staticmethod
+    def get_domain(url):
+        return urlparse(url).netloc
 
-    response.raise_for_status()  # Raise an exception for HTTP errors
+    @staticmethod
+    def create_directory(directory):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
-    '''
-    # DEBUG Print details of the endpoint response
-    printf("1. Response from url: '%s'.\n2. Response text: %s.\n3. Response code: %s.\n4. Response headers: %s\n", 
-       response.url, response.text, response.status_code, response.headers)
-    '''
-    
-    # Start the recursive image download process from the top-level of the HTML
-    find_and_download_images(soup, url, folder_path)
+    @staticmethod
+    def is_valid_url(url):
+        parsed = urlparse(url)
+        return bool(parsed.netloc) and bool(parsed.scheme)
 
+    def extract_imgur_image_urls(self, url):
+        image_urls = []
+        try:
+            self.driver.get(url)
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            for img in soup.find_all('img'):
+                img_url = img.attrs.get('src')
+                if img_url and img_url.startswith('//'):
+                    img_url = 'https:' + img_url
+                if self.is_valid_url(img_url):
+                    image_urls.append(img_url)
+        except Exception as e:
+            logging.error(f"Error fetching Imgur URL {url}: {e}")
+        return image_urls
 
-# Function to download image from its direct source
-def download_image(img_url, alt_text, folder_path):
-    try:
-        img_resp = requests.get(img_url, stream=True)
-        img_resp.raise_for_status()  # Raise an exception for HTTP errors
+    def extract_image_urls(self, url):
+        domain = self.get_domain(url)
+        if 'imgur.com' in domain:
+            return self.extract_imgur_image_urls(url)
 
-        # Load the image to get its size and format
-        img_file = Image.open(BytesIO(img_resp.content))
-        img_format = img_file.format
-        img_size = len(img_resp.content)
+        image_urls = []
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            for img in soup.find_all('img'):
+                img_url = img.attrs.get('src')
+                if not img_url:
+                    continue
+                img_url = urljoin(url, img_url)
+                if self.is_valid_url(img_url):
+                    image_urls.append(img_url)
+        except requests.RequestException as e:
+            logging.error(f"Error fetching {url}: {e}")
+        return image_urls
 
-        # Generate the filename
-        safe_alt_text = alt_text.replace(' ', '_').replace('/', '_')
-        file_name = f"{safe_alt_text}.{img_format.lower()}"
-        file_path = os.path.join(folder_path, file_name)
+    @staticmethod
+    def download_image(url, save_path):
+        try:
+            response = requests.get(url, stream=True, timeout=10)
+            response.raise_for_status()
+            content_type = response.headers['Content-Type']
+            if 'svg' in content_type:
+                logging.info(f"Skipping SVG image: {url}")
+                return False
+            img = Image.open(BytesIO(response.content))
+            img.save(save_path)
+            return True
+        except UnidentifiedImageError:
+            logging.error(f"Cannot identify image file {url}")
+            return False
+        except Exception as e:
+            logging.error(f"Failed to download {url}: {e}")
+            return False
 
-        # Save the image file
-        with open(file_path, 'wb') as f:
-            for chunk in img_resp.iter_content(chunk_size=8192):
-                f.write(chunk)
+    def depth_first_image_scraper(self, start_url):
+        visited = set()
+        stack = [(start_url, 0)]
+        domain = self.get_domain(start_url)
+        self.create_directory(self.save_directory)
 
-        # Print details of the downloaded image
-        printf("Downloaded %s with resolution %dx%d, size %d bytes, format %s", 
-               file_path, img_file.width, img_file.height, img_size, img_format)
+        while stack:
+            url, depth = stack.pop()
+            if depth > self.max_depth or url in visited:
+                continue
 
-    except Exception as e:
-        printf("Failed to download %s: %s", img_url, e)
+            visited.add(url)
+            logging.info(f"Visiting {url}")
+            image_urls = self.extract_image_urls(url)
 
-# Main function to start the process
-def main():
-    folder_path = './downloaded_images'
-    quit_commands = {"q!", "stop", "finish", "quit", "done", "complete"}
+            if not image_urls:
+                logging.warning(f"No images found at {url}")
+                continue
 
-    while True:
-        url_input = input("Enter URL to download images from (or type 'q!', 'stop', 'finish', 'quit', 'done', 'complete' to quit): ").strip().lower()
-        
-        # Check if the input is a quit command
-        if url_input in quit_commands:
-            break
+            with tqdm(total=len(image_urls), desc=f"Downloading images from {url}", leave=False) as pbar:
+                for img_url in image_urls:
+                    img_name = os.path.join(self.save_directory, os.path.basename(urlparse(img_url).path))
+                    if self.download_image(img_url, img_name):
+                        logging.info(f"Downloaded {img_url} to {img_name}")
+                    pbar.update(1)
 
-        # Validate if the input is a proper URL by checking for a scheme (e.g., http, https)
-        if not (url_input.startswith('http://') or url_input.startswith('https://')):
-            printf("Invalid URL entered. Please enter a valid URL or a quit command.")
-            continue
-        
-        # Ensure the folder_path exists
-        if not os.path.isdir(folder_path):
-            os.makedirs(folder_path)
+            if depth < self.max_depth:
+                try:
+                    response = requests.get(url, timeout=10)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    for a in soup.find_all('a', href=True):
+                        next_url = urljoin(url, a['href'])
+                        if self.is_valid_url(next_url) and domain in next_url and next_url not in visited:
+                            stack.append((next_url, depth + 1))
+                except requests.RequestException as e:
+                    logging.error(f"Error fetching {url}: {e}")
 
-        # Process the URL
-        process_url(url_input, folder_path)
+    def run(self):
+        try:
+            self.setup_selenium()
+            while True:
+                start_url = input("Enter URL to scrape (or 'q!', 'q', 'exit', 'terminate' to quit): ")
+                if start_url.lower() in {'q!', 'q', 'exit', 'terminate'}:
+                    logging.info("Exiting the scraper.")
+                    break
+                if not self.is_valid_url(start_url):
+                    logging.error("Invalid URL. Please try again.")
+                    continue
+
+                self.depth_first_image_scraper(start_url)
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+        finally:
+            if self.driver:
+                self.driver.quit()
+            logging.info("ChromeDriver session ended.")
+
 
 if __name__ == "__main__":
-    main()
+    scraper = ImageScraper(chromedriver_path='D:/Chromedriver/chromedriver.exe')
+    scraper.run()
