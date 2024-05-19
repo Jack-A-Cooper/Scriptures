@@ -116,6 +116,14 @@ class TestImageRenaming(unittest.TestCase):
         image_files = [f for f in os.listdir(self.test_dir) if re.match(r'\d+_[a-z0-9]{8}\.jpg', f)]
         self.assertTrue(image_files)
 
+        for img_file in image_files:
+            prefix = img_file.split('_')[0]
+            unique_string = img_file.split('_')[1].split('.')[0]
+            associated_txt_files = [f for f in os.listdir(self.test_dir) if f.startswith(f"{prefix}_{unique_string}") and f.endswith('.txt')]
+            self.assertTrue(associated_txt_files)
+            for txt_file in associated_txt_files:
+                self.assertTrue(txt_file.startswith(f"{prefix}_{unique_string}"))
+
     def test_file_filters(self):
         other_file = "other.txt"
         with open(other_file, 'w') as f:

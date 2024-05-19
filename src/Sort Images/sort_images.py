@@ -50,10 +50,8 @@ def rename_file(current_path, new_path, dry_run, verbose):
     except Exception as e:
         logging.error(f"Error renaming {current_path} to {new_path}: {e}")
 
-def process_txt_files(image_file, new_image_name, backup_dir, current_dir, dry_run, verbose):
+def process_txt_files(base_name, new_base_name, backup_dir, current_dir, dry_run, verbose):
     """Processes and renames associated .txt files."""
-    base_name = os.path.splitext(image_file)[0]
-    new_base_name = os.path.splitext(new_image_name)[0]
     for txt_file in os.listdir(current_dir):
         if txt_file.startswith(base_name) and txt_file.endswith('.txt'):
             suffix = txt_file[len(base_name):]
