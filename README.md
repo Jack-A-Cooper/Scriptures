@@ -1,5 +1,7 @@
 # Scriptures
 
+### An Assortment of the python scripts I have written. Note: some are particularlly very specific (with regards to use-case), but I thought I'd include them regardless for others to use, modify, or expand upon.
+
 ## Automation 
 1. [Google Images Jpg Too Large to Jpg](</src/Google Images Jpg Too Large to Jpg>)
 2. [Python Requirements.txt Generator (for utilizing pip install -r)](</src/Requirements.txt Generator>)
