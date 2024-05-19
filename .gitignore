@@ -5,6 +5,10 @@ __pycache__/
 
 # Custom
 *$py.config
+*.png
+*.jpg
+*.webp
+downloaded images/
 
 # C extensions
 *.so
