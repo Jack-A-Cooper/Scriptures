@@ -7,6 +7,8 @@
 2. [Python Requirements.txt Generator (for utilizing pip install -r)](</src/Requirements.txt Generator>)
 3. [Scrape images from URL](</src/Scrape images from URL>)
 4. [Scrape images from URL BeautifulSoup Version](</src/Scrape images from URL BeautifulSoup Version>)
+5. [Scrape images from URL DFS BeautifulSoup Version](</src/Scrape images from URL BeautifulSoup DFS Version>)
+6. [Sort Images](</src/Sort Images>)
 
 ## Lite Applications and Lite Programs
 1. [Windows 11 System Information and Process Manager](</src/Windows 11 System Information and Process Manager>)
