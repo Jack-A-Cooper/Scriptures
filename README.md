@@ -1,7 +1,7 @@
 # Scriptures
 
 ## Automation
-2. [Google Images Jpg Too Large to Jpg](./src/Google%20Images%20Jpg%20Too%20Large%20to%20Jpg/Google_Images_jpg_too_large_to_jpg.py)
+2. [Google Images Jpg Too Large to Jpg](./src/CUDA and Torch Checker)
 3. [Python Requirements.txt Generator (for utilizing pip install -r)](./src/Python%20Requirements.txt%20Generator)
 4. [Scrape images from URL](./src/Scrape%20images%20from%20URL)
 5. [Scrape images from URL BeautifulSoup Version](./src/Scrape%20images%20from%20URL%20BeautifulSoup%20Version)
