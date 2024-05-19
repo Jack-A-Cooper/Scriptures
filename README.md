@@ -1,7 +1,7 @@
 # Scriptures
 
 ## Automation
-2. [Google Images Jpg Too Large to Jpg] (/src/Google Images Jpg Too Large to Jpg/)
+2. [Google Images Jpg Too Large to Jpg] (/src/Google Images Jpg Too Large to Jpg/Google_ Images_jpg_too_large_to_jpg.py/)
 3. Python Requirements.txt Generator (for utilizing pip install -r) [href="./src/Python Requirements.txt Generator"]
 4. Scrape images from URL [href="./src/Scrape images from URL"]
 5. Scrape images from URL BeautifulSoup Version [href="./src/Scrape images from URL BeautifulSoup Version"]
