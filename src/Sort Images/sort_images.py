@@ -14,6 +14,7 @@ def setup_logging(log_to_file=False, log_level=logging.INFO):
         logging.basicConfig(filename='image_sorting.log', level=log_level, format=log_format)
     else:
         logging.basicConfig(level=log_level, format=log_format)
+    logging.getLogger().setLevel(log_level)  # Explicitly set the root logger level
 
 def get_random_string(length=8):
     """Generates a random string of specified length."""
@@ -22,25 +23,18 @@ def get_random_string(length=8):
 
 def create_backup_dir(backup_dir):
     """Creates a backup directory if it does not exist."""
-    try:
-        if not os.path.exists(backup_dir):
-            os.makedirs(backup_dir)
+    if not os.path.exists(backup_dir):
+        os.makedirs(backup_dir)
         logging.info(f"Backup directory created at {backup_dir}")
-    except Exception as e:
-        logging.error(f"Failed to create backup directory {backup_dir}: {e}")
 
 def backup_file(file_path, backup_dir):
     """Backs up a file to the specified backup directory."""
-    try:
-        if os.path.exists(file_path):
-            backup_path = os.path.join(backup_dir, os.path.basename(file_path))
-            shutil.copy2(file_path, backup_path)
-            logging.info(f"Backed up {file_path} to {backup_path}")
-            return backup_path
-        return None
-    except Exception as e:
-        logging.error(f"Error backing up {file_path}: {e}")
-        return None
+    if os.path.exists(file_path):
+        backup_path = os.path.join(backup_dir, os.path.basename(file_path))
+        shutil.copy2(file_path, backup_path)
+        logging.info(f"Backed up {file_path} to {backup_path}")
+        return backup_path
+    return None
 
 def rename_file(current_path, new_path, dry_run, verbose):
     """Renames a file from current_path to new_path."""
@@ -49,21 +43,25 @@ def rename_file(current_path, new_path, dry_run, verbose):
             if verbose:
                 logging.info(f"DRY RUN: Would rename {current_path} to {new_path}")
         else:
+            if os.path.exists(new_path):
+                os.remove(new_path)
             os.rename(current_path, new_path)
             logging.info(f"Renamed {current_path} to {new_path}")
     except Exception as e:
         logging.error(f"Error renaming {current_path} to {new_path}: {e}")
 
-def process_txt_files(base_name, new_base_name, backup_dir, current_dir, dry_run, verbose):
+def process_txt_files(image_file, new_image_name, backup_dir, current_dir, dry_run, verbose):
     """Processes and renames associated .txt files."""
-    txt_files = [f"{base_name}.txt", f"{base_name}_negative.txt"]
-    for txt_file in txt_files:
-        current_txt_path = os.path.join(current_dir, txt_file)
-        new_txt_name = f"{new_base_name}{os.path.splitext(txt_file)[1]}"
-        new_txt_path = os.path.join(current_dir, new_txt_name)
-        if os.path.exists(current_txt_path):
-            backup_file(current_txt_path, backup_dir)
-            if not os.path.exists(new_txt_path) or dry_run:
+    base_name = os.path.splitext(image_file)[0]
+    new_base_name = os.path.splitext(new_image_name)[0]
+    for txt_file in os.listdir(current_dir):
+        if txt_file.startswith(base_name) and txt_file.endswith('.txt'):
+            suffix = txt_file[len(base_name):]
+            current_txt_path = os.path.join(current_dir, txt_file)
+            new_txt_name = f"{new_base_name}{suffix}"
+            new_txt_path = os.path.join(current_dir, new_txt_name)
+            if os.path.exists(current_txt_path):
+                backup_file(current_txt_path, backup_dir)
                 rename_file(current_txt_path, new_txt_path, dry_run, verbose)
 
 def process_image(image, new_name, current_dir, backup_dir, overwrite, dry_run, verbose):
@@ -77,7 +75,7 @@ def process_image(image, new_name, current_dir, backup_dir, overwrite, dry_run, 
     
     if os.path.exists(new_path):
         if overwrite:
-            backup_path = backup_file(new_path, backup_dir)
+            backup_file(new_path, backup_dir)
             rename_file(current_path, new_path, dry_run, verbose)
         else:
             logging.warning(f"Skipped {current_path} (already exists)")
@@ -107,7 +105,7 @@ def rename_images(current_dir, overwrite=False, backup_dir=None, dry_run=False, 
     images = [file for file in files if any(file.endswith(ext) for ext in file_extensions)]
     images.sort()
 
-    if len(images) == 0:
+    if not images:
         logging.info("No matching image files found to rename.")
         return
     
