@@ -1,0 +1,5 @@
+requests_html==0.10.0
+sys
+os
+requests==2.31.0
+urllib

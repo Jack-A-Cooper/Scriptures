@@ -1,0 +1,11 @@
+sys
+GPUtil==1.4.0
+OpenHardwareMonitor
+datetime==5.4
+clr
+os
+psutil==5.9.8
+ctypes
+tkinter
+platform
+json

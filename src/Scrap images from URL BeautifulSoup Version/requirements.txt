@@ -1,0 +1,7 @@
+requests==2.31.0
+bs4==0.0.2
+urllib
+sys
+os
+PIL
+io

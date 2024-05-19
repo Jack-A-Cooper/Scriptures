@@ -7,7 +7,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from datetime import datetime
 import ctypes
-import clr  # Import pythonnet module
+import clr
 import json
 
 # Function to check if the script is running with administrative privileges

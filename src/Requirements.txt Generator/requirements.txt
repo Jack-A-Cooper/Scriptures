@@ -1,0 +1,5 @@
+pkg_resources
+subprocess
+ast
+os
+tkinter
