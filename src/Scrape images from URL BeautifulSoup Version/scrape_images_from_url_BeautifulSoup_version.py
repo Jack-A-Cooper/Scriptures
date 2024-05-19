@@ -12,11 +12,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 
 class ImageScraper:
-    def __init__(self, chromedriver_path, save_directory='./downloaded_images', max_depth=2, headless=True):
+    def __init__(self, chromedriver_path, save_directory='./downloaded_images', max_depth=2, headless=True, min_image_size=(50, 50)):
         self.chromedriver_path = chromedriver_path
         self.save_directory = save_directory
         self.max_depth = max_depth
         self.headless = headless
+        self.min_image_size = min_image_size
         self.driver = None
         self.setup_logging()
 
@@ -35,6 +36,7 @@ class ImageScraper:
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--autoplay-policy=no-user-gesture-required")
         chrome_service = Service(self.chromedriver_path)
         
         try:
@@ -58,7 +60,7 @@ class ImageScraper:
         parsed = urlparse(url)
         return bool(parsed.netloc) and bool(parsed.scheme)
 
-    def extract_imgur_image_urls(self, url):
+    def extract_image_urls(self, url):
         image_urls = []
         try:
             self.driver.get(url)
@@ -67,43 +69,39 @@ class ImageScraper:
                 img_url = img.attrs.get('src')
                 if img_url and img_url.startswith('//'):
                     img_url = 'https:' + img_url
+                elif img_url:
+                    img_url = urljoin(url, img_url)
                 if self.is_valid_url(img_url):
                     image_urls.append(img_url)
         except Exception as e:
-            logging.error(f"Error fetching Imgur URL {url}: {e}")
-        return image_urls
-
-    def extract_image_urls(self, url):
-        domain = self.get_domain(url)
-        if 'imgur.com' in domain:
-            return self.extract_imgur_image_urls(url)
-
-        image_urls = []
-        try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for img in soup.find_all('img'):
-                img_url = img.attrs.get('src')
-                if not img_url:
-                    continue
-                img_url = urljoin(url, img_url)
-                if self.is_valid_url(img_url):
-                    image_urls.append(img_url)
-        except requests.RequestException as e:
-            logging.error(f"Error fetching {url}: {e}")
+            logging.error(f"Error fetching URL {url}: {e}")
         return image_urls
 
     @staticmethod
-    def download_image(url, save_path):
+    def is_valid_image_format(content_type):
+        valid_formats = ['image/jpeg', 'image/png', 'image/webp']
+        return content_type in valid_formats
+
+    @staticmethod
+    def is_junk_image(url):
+        junk_keywords = ['logo', 'icon', 'favicon']
+        return any(keyword in url.lower() for keyword in junk_keywords)
+
+    def download_image(self, url, save_path):
         try:
             response = requests.get(url, stream=True, timeout=10)
             response.raise_for_status()
             content_type = response.headers['Content-Type']
-            if 'svg' in content_type:
-                logging.info(f"Skipping SVG image: {url}")
+            if not self.is_valid_image_format(content_type):
+                logging.info(f"Skipping unsupported image format: {url}")
+                return False
+            if self.is_junk_image(url):
+                logging.info(f"Skipping junk image: {url}")
                 return False
             img = Image.open(BytesIO(response.content))
+            if img.size[0] < self.min_image_size[0] or img.size[1] < self.min_image_size[1]:
+                logging.info(f"Skipping small image: {url}")
+                return False
             img.save(save_path)
             return True
         except UnidentifiedImageError:
