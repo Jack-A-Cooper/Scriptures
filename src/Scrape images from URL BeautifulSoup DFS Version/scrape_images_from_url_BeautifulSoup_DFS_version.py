@@ -1,5 +1,4 @@
 import os
-import time
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
@@ -11,14 +10,14 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 
 class ImageScraper:
-    def __init__(self, chromedriver_path, save_directory='./downloaded_images', headless=True):
+    def __init__(self, chromedriver_path, save_directory='./downloaded_images', max_depth=2, headless=True, min_image_size=(50, 50)):
         self.chromedriver_path = chromedriver_path
         self.save_directory = save_directory
+        self.max_depth = max_depth
         self.headless = headless
+        self.min_image_size = min_image_size
         self.driver = None
         self.setup_logging()
 
@@ -48,6 +47,10 @@ class ImageScraper:
             raise
 
     @staticmethod
+    def get_domain(url):
+        return urlparse(url).netloc
+
+    @staticmethod
     def create_directory(directory):
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -61,20 +64,6 @@ class ImageScraper:
         image_urls = []
         try:
             self.driver.get(url)
-            # Scroll to the bottom to load all images
-            last_height = self.driver.execute_script("return document.body.scrollHeight")
-            while True:
-                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                time.sleep(2)  # Wait for the page to load
-                new_height = self.driver.execute_script("return document.body.scrollHeight")
-                if new_height == last_height:
-                    break
-                last_height = new_height
-
-            # Wait for images to load
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_all_elements_located((By.TAG_NAME, "img"))
-            )
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             for img in soup.find_all('img'):
                 img_url = img.attrs.get('src')
@@ -88,11 +77,31 @@ class ImageScraper:
             logging.error(f"Error fetching URL {url}: {e}")
         return image_urls
 
+    @staticmethod
+    def is_valid_image_format(content_type):
+        valid_formats = ['image/jpeg', 'image/png', 'image/webp']
+        return content_type in valid_formats
+
+    @staticmethod
+    def is_junk_image(url):
+        junk_keywords = ['logo', 'icon', 'favicon']
+        return any(keyword in url.lower() for keyword in junk_keywords)
+
     def download_image(self, url, save_path):
         try:
             response = requests.get(url, stream=True, timeout=10)
             response.raise_for_status()
+            content_type = response.headers['Content-Type']
+            if not self.is_valid_image_format(content_type):
+                logging.info(f"Skipping unsupported image format: {url}")
+                return False
+            if self.is_junk_image(url):
+                logging.info(f"Skipping junk image: {url}")
+                return False
             img = Image.open(BytesIO(response.content))
+            if img.size[0] < self.min_image_size[0] or img.size[1] < self.min_image_size[1]:
+                logging.info(f"Skipping small image: {url}")
+                return False
             img.save(save_path)
             return True
         except UnidentifiedImageError:
@@ -102,21 +111,43 @@ class ImageScraper:
             logging.error(f"Failed to download {url}: {e}")
             return False
 
-    def scrape_images(self, start_url):
+    def depth_first_image_scraper(self, start_url):
+        visited = set()
+        stack = [(start_url, 0)]
+        domain = self.get_domain(start_url)
         self.create_directory(self.save_directory)
 
-        image_urls = self.extract_image_urls(start_url)
+        while stack:
+            url, depth = stack.pop()
+            if depth > self.max_depth or url in visited:
+                continue
 
-        if not image_urls:
-            logging.warning(f"No images found at {start_url}")
-            return
+            visited.add(url)
+            logging.info(f"Visiting {url}")
+            image_urls = self.extract_image_urls(url)
 
-        with tqdm(total=len(image_urls), desc=f"Downloading images from {start_url}", leave=False) as pbar:
-            for img_url in image_urls:
-                img_name = os.path.join(self.save_directory, os.path.basename(urlparse(img_url).path))
-                if self.download_image(img_url, img_name):
-                    logging.info(f"Downloaded {img_url} to {img_name}")
-                pbar.update(1)
+            if not image_urls:
+                logging.warning(f"No images found at {url}")
+                continue
+
+            with tqdm(total=len(image_urls), desc=f"Downloading images from {url}", leave=False) as pbar:
+                for img_url in image_urls:
+                    img_name = os.path.join(self.save_directory, os.path.basename(urlparse(img_url).path))
+                    if self.download_image(img_url, img_name):
+                        logging.info(f"Downloaded {img_url} to {img_name}")
+                    pbar.update(1)
+
+            if depth < self.max_depth:
+                try:
+                    response = requests.get(url, timeout=10)
+                    response.raise_for_status()
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    for a in soup.find_all('a', href=True):
+                        next_url = urljoin(url, a['href'])
+                        if self.is_valid_url(next_url) and domain in next_url and next_url not in visited:
+                            stack.append((next_url, depth + 1))
+                except requests.RequestException as e:
+                    logging.error(f"Error fetching {url}: {e}")
 
     def run(self):
         try:
@@ -130,13 +161,14 @@ class ImageScraper:
                     logging.error("Invalid URL. Please try again.")
                     continue
 
-                self.scrape_images(start_url)
+                self.depth_first_image_scraper(start_url)
         except Exception as e:
             logging.error(f"An error occurred: {e}")
         finally:
             if self.driver:
                 self.driver.quit()
             logging.info("ChromeDriver session ended.")
+
 
 if __name__ == "__main__":
     scraper = ImageScraper(chromedriver_path='D:/Chromedriver/chromedriver.exe')
