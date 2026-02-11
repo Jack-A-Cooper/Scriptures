@@ -1,0 +1,5 @@
+python sdxl_to_diffusers_any.py "C:\path\your_model.safetensors"
+# or choose an output folder
+python sdxl_to_diffusers_any.py "C:\path\your_model.safetensors" -o "C:\path\MyModel_Diffusers"
+
+$py="C:\AI\sdxlconv\venv\Scripts\python.exe"; $env:CUDA_VISIBLE_DEVICES=""; & $py -c 'import sys;print("PY:",sys.executable)'; & $py "C:\AI\SDGUI\Converter Script\sdxl_to_diffusers_any_verbose.py" "C:\AI\SDGUI\Models\Checkpoints\ponyRealism_V23ULTRA.safetensors" -o "C:\AI\SDGUI\Converter Script\Outputs" --fp16 --force auto
